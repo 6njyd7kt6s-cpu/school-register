@@ -1,0 +1,9 @@
+node_modules
+data
+lib/sample-roster.json
+.git
+.wrangler
+.sites-runtime
+dist
+web-dist
+.env*
