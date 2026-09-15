@@ -1,0 +1,44 @@
+name: Publish school website
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: school-pages
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare source files
+        if: hashFiles('package.json') == ''
+        run: |
+          unzip -q '校园记录项目.zip' -d /tmp/school-source
+          rsync -a --exclude=.github /tmp/school-source/school-register/ ./
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .
+          git commit -m 'Expand application source'
+          git push
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build:web
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-dist
+  deploy:
+    environment: github-pages
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
