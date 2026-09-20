@@ -1,13 +1,299 @@
-import {useEffect,useState} from 'react';
-import {fetchApi,openPhoto} from './api';
-import {Button} from '../components/ui/button';
-import {Input} from '../components/ui/input';
-type Student={id:string;grade:string;class_name:string;name:string;number:string};
-const bj=(d:string)=>new Date(d).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false});
-export default function RecordManagement({students}:{students:Student[]}){
-const [rows,setRows]=useState<any[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(0),[deleted,setDeleted]=useState(false),[edit,setEdit]=useState<any>(null),[reason,setReason]=useState(''),[search,setSearch]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[reload,setReload]=useState(0);
-useEffect(()=>{let alive=true;setBusy(true);fetchApi(`/api/manage?page=${page}&deleted=${deleted}`).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error);if(alive){setRows(d.rows);setTotal(d.total)}}).catch(e=>alive&&setMessage(e.message)).finally(()=>alive&&setBusy(false));return()=>{alive=false}},[page,deleted,reload]);
-function start(r:any,action:string){setEdit({...r,action,studentId:r.student_id,date:new Date(new Date(r.created_at).getTime()+28800000).toISOString().slice(0,19)});setReason('');setSearch('');setMessage('')}
-async function save(){setBusy(true);setMessage('');try{const r=await fetchApi('/api/manage',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({...edit,reason,date:edit.action==='edit'?new Date(edit.date+'+08:00').toISOString():undefined})});const d=await r.json();if(!r.ok)throw Error(d.error);setMessage(edit.action==='delete'?'已删除，可在“已删除”中恢复。':edit.action==='restore'?'已恢复，重新计入统计。':'修改已保存，统计已同步。');setEdit(null);setReload(x=>x+1)}catch(e:any){setMessage(e.message)}finally{setBusy(false)}}
-return <section className="card"><h2>记录管理</h2><p className="muted">仅管理员可修改或删除。删除后不计入报告，可恢复；所有操作保留原因和历史。</p><div className="actions"><Button variant={!deleted?'default':'outline'} onClick={()=>{setDeleted(false);setPage(0);setEdit(null)}}>有效记录</Button><Button variant={deleted?'default':'outline'} onClick={()=>{setDeleted(true);setPage(0);setEdit(null)}}>已删除</Button><Button variant="ghost" onClick={()=>setReload(x=>x+1)}>刷新</Button></div>{message&&<p role="status" className="notice">{message}</p>}{edit&&<div className="card" style={{marginTop:16}}><h3>{edit.action==='edit'?'修改记录':edit.action==='delete'?'确认删除记录':'恢复记录'}</h3><p>{edit.grade}{edit.class_name} · {edit.name} · {edit.number}<br/>{bj(edit.created_at)}</p>{edit.action==='edit'&&<><label>重新选择学生<Input aria-label="修改学生搜索" placeholder="输入姓名或序号" value={search} onChange={e=>setSearch(e.target.value)}/></label>{search&&students.filter(s=>s.name.includes(search.trim())||s.number.includes(search.trim())).slice(0,30).map(s=><Button key={s.id} variant="outline" style={{margin:4}} onClick={()=>{setEdit({...edit,studentId:s.id});setSearch('')}}>{s.grade}{s.class_name} {s.name} · {s.number}</Button>)}<p>当前学生：{students.find(s=>s.id===edit.studentId)?.name} · {students.find(s=>s.id===edit.studentId)?.number}</p><label>登记时间 北京时间<Input aria-label="修改登记时间" type="datetime-local" step="1" value={edit.date} onChange={e=>setEdit({...edit,date:e.target.value})}/></label><p className="muted">照片保持原图；照片上传有误时，可删除该记录后重新登记。</p></>}<label>操作原因<Input aria-label="操作原因" maxLength={300} value={reason} onChange={e=>setReason(e.target.value)} placeholder="例如 误登记，或学生选择有误"/></label><div className="actions"><Button disabled={busy||reason.trim().length<2} onClick={save}>{busy?'正在保存…':edit.action==='delete'?'确认删除':edit.action==='restore'?'确认恢复':'保存修改'}</Button><Button variant="outline" disabled={busy} onClick={()=>setEdit(null)}>取消</Button></div></div>}{busy?<p>正在加载…</p>:rows.length?rows.map(r=><div key={r.id} className="row" style={{flexWrap:'wrap',gap:8}}><div><b>{r.name}</b><p className="muted">{r.grade}{r.class_name} · {r.number}<br/>{bj(r.created_at)}</p></div><div className="actions"><Button variant="ghost" onClick={()=>openPhoto(r.id).catch(e=>setMessage(e.message))}>照片</Button>{deleted?<Button variant="outline" onClick={()=>start(r,'restore')}>恢复</Button>:<><Button variant="outline" onClick={()=>start(r,'edit')}>修改</Button><Button variant="outline" onClick={()=>start(r,'delete')}>删除</Button></>}</div></div>):<p className="empty">暂无记录</p>}<div className="actions"><Button variant="outline" disabled={!page||busy} onClick={()=>setPage(p=>p-1)}>上一页</Button><span>{page+1} / {Math.max(1,Math.ceil(total/20))} 页 · {total} 条</span><Button variant="outline" disabled={(page+1)*20>=total||busy} onClick={()=>setPage(p=>p+1)}>下一页</Button></div></section>
+import { useEffect, useState } from "react";
+import { fetchApi, openPhoto } from "./api";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+type Student = {
+  id: string;
+  grade: string;
+  class_name: string;
+  name: string;
+  number: string;
+};
+const bj = (d: string) =>
+  new Date(d).toLocaleString("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour12: false,
+  });
+export default function RecordManagement({
+  students,
+}: {
+  students: Student[];
+}) {
+  const [rows, setRows] = useState<any[]>([]),
+    [total, setTotal] = useState(0),
+    [page, setPage] = useState(0),
+    [deleted, setDeleted] = useState(false),
+    [edit, setEdit] = useState<any>(null),
+    [reason, setReason] = useState(""),
+    [search, setSearch] = useState(""),
+    [busy, setBusy] = useState(false),
+    [message, setMessage] = useState(""),
+    [reload, setReload] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setBusy(true);
+    fetchApi(`/api/manage?page=${page}&deleted=${deleted}`)
+      .then(async (r) => {
+        const d = await r.json();
+        if (!r.ok) throw Error(d.error);
+        if (alive) {
+          setRows(d.rows);
+          setTotal(d.total);
+        }
+      })
+      .catch((e) => alive && setMessage(e.message))
+      .finally(() => alive && setBusy(false));
+    return () => {
+      alive = false;
+    };
+  }, [page, deleted, reload]);
+  function start(r: any, action: string) {
+    setEdit({
+      ...r,
+      action,
+      studentId: r.student_id,
+      date: new Date(new Date(r.created_at).getTime() + 28800000)
+        .toISOString()
+        .slice(0, 19),
+    });
+    setReason("");
+    setSearch("");
+    setMessage("");
+  }
+  async function save() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const r = await fetchApi("/api/manage", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...edit,
+          reason,
+          date:
+            edit.action === "edit"
+              ? new Date(edit.date + "+08:00").toISOString()
+              : undefined,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      setMessage(
+        edit.action === "delete"
+          ? "已删除，可在“已删除”中恢复。"
+          : edit.action === "restore"
+            ? "已恢复，重新计入统计。"
+            : "修改已保存，统计已同步。",
+      );
+      setEdit(null);
+      setReload((x) => x + 1);
+    } catch (e: any) {
+      setMessage(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="card">
+      <h2>记录管理</h2>
+      <p className="muted">
+        仅管理员可修改或删除。删除后不计入报告，可恢复；所有操作保留原因和历史。
+      </p>
+      <div className="actions">
+        <Button
+          variant={!deleted ? "default" : "outline"}
+          onClick={() => {
+            setDeleted(false);
+            setPage(0);
+            setEdit(null);
+          }}
+        >
+          有效记录
+        </Button>
+        <Button
+          variant={deleted ? "default" : "outline"}
+          onClick={() => {
+            setDeleted(true);
+            setPage(0);
+            setEdit(null);
+          }}
+        >
+          已删除
+        </Button>
+        <Button variant="ghost" onClick={() => setReload((x) => x + 1)}>
+          刷新
+        </Button>
+      </div>
+      {message && (
+        <p role="status" className="notice">
+          {message}
+        </p>
+      )}
+      {edit && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>
+            {edit.action === "edit"
+              ? "修改记录"
+              : edit.action === "delete"
+                ? "确认删除记录"
+                : "恢复记录"}
+          </h3>
+          <p>
+            {edit.grade}
+            {edit.class_name} · {edit.name} · {edit.number}
+            <br />
+            {bj(edit.created_at)}
+          </p>
+          {edit.action === "edit" && (
+            <>
+              <label>
+                重新选择学生
+                <Input
+                  aria-label="修改学生搜索"
+                  placeholder="输入姓名或序号"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </label>
+              {search &&
+                students
+                  .filter(
+                    (s) =>
+                      s.name.includes(search.trim()) ||
+                      s.number.includes(search.trim()),
+                  )
+                  .slice(0, 30)
+                  .map((s) => (
+                    <Button
+                      key={s.id}
+                      variant="outline"
+                      style={{ margin: 4 }}
+                      onClick={() => {
+                        setEdit({ ...edit, studentId: s.id });
+                        setSearch("");
+                      }}
+                    >
+                      {s.grade}
+                      {s.class_name} {s.name} · {s.number}
+                    </Button>
+                  ))}
+              <p>
+                当前学生：{students.find((s) => s.id === edit.studentId)?.name}{" "}
+                · {students.find((s) => s.id === edit.studentId)?.number}
+              </p>
+              <label>
+                登记时间 北京时间
+                <Input
+                  aria-label="修改登记时间"
+                  type="datetime-local"
+                  step="1"
+                  value={edit.date}
+                  onChange={(e) => setEdit({ ...edit, date: e.target.value })}
+                />
+              </label>
+              <p className="muted">
+                照片保持原图；照片上传有误时，可删除该记录后重新登记。
+              </p>
+            </>
+          )}
+          <label>
+            操作原因
+            <Input
+              aria-label="操作原因"
+              maxLength={300}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="例如 误登记，或学生选择有误"
+            />
+          </label>
+          <div className="actions">
+            <Button disabled={busy || reason.trim().length < 2} onClick={save}>
+              {busy
+                ? "正在保存…"
+                : edit.action === "delete"
+                  ? "确认删除"
+                  : edit.action === "restore"
+                    ? "确认恢复"
+                    : "保存修改"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setEdit(null)}
+            >
+              取消
+            </Button>
+          </div>
+        </div>
+      )}
+      {busy ? (
+        <p>正在加载…</p>
+      ) : rows.length ? (
+        rows.map((r) => (
+          <div key={r.id} className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <b>{r.name}</b>
+              <p className="muted">
+                {r.grade}
+                {r.class_name} · {r.number}
+                <br />
+                {bj(r.created_at)}
+                {r.details && (
+                  <>
+                    <br />
+                    违规情况：{r.details}
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="actions">
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  openPhoto(r.id).catch((e) => setMessage(e.message))
+                }
+              >
+                照片
+              </Button>
+              {deleted ? (
+                <Button variant="outline" onClick={() => start(r, "restore")}>
+                  恢复
+                </Button>
+              ) : (
+                <>
+                  <Button variant="outline" onClick={() => start(r, "edit")}>
+                    修改
+                  </Button>
+                  <Button variant="outline" onClick={() => start(r, "delete")}>
+                    删除
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        ))
+      ) : (
+        <p className="empty">暂无记录</p>
+      )}
+      <div className="actions">
+        <Button
+          variant="outline"
+          disabled={!page || busy}
+          onClick={() => setPage((p) => p - 1)}
+        >
+          上一页
+        </Button>
+        <span>
+          {page + 1} / {Math.max(1, Math.ceil(total / 20))} 页 · {total} 条
+        </span>
+        <Button
+          variant="outline"
+          disabled={(page + 1) * 20 >= total || busy}
+          onClick={() => setPage((p) => p + 1)}
+        >
+          下一页
+        </Button>
+      </div>
+    </section>
+  );
 }
