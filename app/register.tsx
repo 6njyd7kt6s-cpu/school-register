@@ -27,6 +27,15 @@ type Student = {
 };
 const grades = ["初一", "初二", "初三", "高一", "高二", "高三"];
 const today = () => new Date(Date.now() + 28800000).toISOString().slice(0, 10);
+const shiftDate = (value: string, days: number) => {
+  const d = new Date(value + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+const previousMonth = (value: string) => {
+  const [year, month] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 10);
+};
 const beijing = (d: string) =>
   new Date(d).toLocaleString("zh-CN", {
     timeZone: "Asia/Shanghai",
@@ -75,6 +84,7 @@ export default function Home() {
     [date, setDate] = useState(""),
     [report, setReport] = useState<any>(null),
     [reportBusy, setReportBusy] = useState(false),
+    [showAllClasses, setShowAllClasses] = useState(false),
     [importText, setImportText] = useState("");
   const requestId = useRef("");
   const camera = useRef<HTMLInputElement>(null);
@@ -274,23 +284,49 @@ export default function Home() {
       ["统计类型", kind === "week" ? "周报" : "月报"],
       ["起始日期", report.from],
       ["截止日期", report.to],
+      ["生成时间", beijing(new Date().toISOString()) + "（北京时间）"],
       ["统计口径", "每次登记计1次"],
+      ["违规登记总数", report.total],
+      ["涉及班级数", activeReportRows.length],
       [],
       ["年段", "班级", "违规次数"],
-      ...report.rows.map((r: any) => [r.grade, r.class_name, r.count]),
+      ...orderedReportRows.map((r: any) => [r.grade, r.class_name, r.count]),
       [],
       ["年段", "最多次数", "最多班级（含并列）"],
-      ...report.leaders.map((r: any) => [
-        r.grade,
-        r.max,
-        r.classes.join("、") || "本期无违规登记",
-      ]),
+      ...[...report.leaders]
+        .sort(
+          (a: any, b: any) => grades.indexOf(a.grade) - grades.indexOf(b.grade),
+        )
+        .map((r: any) => [
+          r.grade,
+          r.max,
+          r.classes.join("、") || "本期无违规登记",
+        ]),
     ];
     download(
       `违规${kind === "week" ? "周报" : "月报"}_${report.from}.csv`,
       rows.map((r) => r.map(csv).join(",")).join("\r\n"),
     );
   }
+  const orderedReportRows = [...(report?.rows ?? [])].sort(
+    (a: any, b: any) =>
+      grades.indexOf(a.grade) - grades.indexOf(b.grade) ||
+      a.class_name.localeCompare(b.class_name, "zh-CN", { numeric: true }),
+  );
+  const activeReportRows = orderedReportRows.filter(
+    (r: any) => Number(r.count) > 0,
+  );
+  const visibleReportRows = showAllClasses
+    ? orderedReportRows
+    : activeReportRows;
+  const topClasses = [...activeReportRows]
+    .sort(
+      (a: any, b: any) =>
+        Number(b.count) - Number(a.count) ||
+        grades.indexOf(a.grade) - grades.indexOf(b.grade) ||
+        a.class_name.localeCompare(b.class_name, "zh-CN", { numeric: true }),
+    )
+    .slice(0, 3);
   return (
     <main>
       <header>
@@ -565,7 +601,23 @@ export default function Home() {
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                 />
+                <small className="date-hint">
+                  {kind === "week" ? "选择该周内任意一天" : "选择该月内任意一天"}
+                </small>
               </label>
+            </div>
+            <div className="actions report-shortcuts">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setDate(kind === "week" ? shiftDate(today(), -7) : previousMonth(today()))
+                }
+              >
+                {kind === "week" ? "上周" : "上个月"}
+              </Button>
+              <Button variant="outline" onClick={() => setDate(today())}>
+                {kind === "week" ? "本周" : "本月"}
+              </Button>
             </div>
             {reportBusy ? (
               <p className="empty">正在统计…</p>
@@ -574,16 +626,48 @@ export default function Home() {
                 <p className="period">
                   {report.from} 至 {report.to} · 北京时间
                 </p>
-                <div className="metric">
-                  <p className="muted">本期违规登记</p>
-                  <span className="big">{report.total}</span>{" "}
-                  <span className="muted">次</span>
+                <div className="metric-grid">
+                  <div className="metric">
+                    <p className="muted">本期违规登记</p>
+                    <span className="big">{report.total}</span>{" "}
+                    <span className="muted">次</span>
+                  </div>
+                  <div className="metric">
+                    <p className="muted">涉及班级</p>
+                    <span className="big">{activeReportRows.length}</span>{" "}
+                    <span className="muted">个</span>
+                  </div>
                 </div>
-                <h2>各班违规次数</h2>
+                <h2>全校次数较多班级</h2>
+                {!topClasses.length ? (
+                  <p className="empty compact">本期无违规登记</p>
+                ) : (
+                  topClasses.map((r: any, index: number) => (
+                    <div className="row" key={r.grade + r.class_name}>
+                      <span>
+                        {index + 1}. {r.grade}{r.class_name}
+                      </span>
+                      <b>{r.count} 次</b>
+                    </div>
+                  ))
+                )}
+                <div className="section-heading">
+                  <h2>各班违规次数</h2>
+                  {report.rows.length > activeReportRows.length && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setShowAllClasses((value) => !value)}
+                    >
+                      {showAllClasses ? "隐藏 0 次班级" : "显示全部班级"}
+                    </Button>
+                  )}
+                </div>
                 {!report.rows.length ? (
                   <p className="empty">暂无班级，请先导入名册。</p>
+                ) : !visibleReportRows.length ? (
+                  <p className="empty compact">本期各班均为 0 次</p>
                 ) : (
-                  report.rows.map((r: any) => (
+                  visibleReportRows.map((r: any) => (
                     <div
                       key={r.grade + r.class_name}
                       style={{ padding: "12px 0" }}
@@ -604,7 +688,7 @@ export default function Home() {
                                 (Number(r.count) /
                                   Math.max(
                                     1,
-                                    ...report.rows.map((x: any) =>
+                                    ...activeReportRows.map((x: any) =>
                                       Number(x.count),
                                     ),
                                   )) *
@@ -617,7 +701,12 @@ export default function Home() {
                   ))
                 )}
                 <h2 style={{ marginTop: 28 }}>各年段最多班级</h2>
-                {report.leaders.map((r: any) => (
+                {[...report.leaders]
+                  .sort(
+                    (a: any, b: any) =>
+                      grades.indexOf(a.grade) - grades.indexOf(b.grade),
+                  )
+                  .map((r: any) => (
                   <div className="row" key={r.grade}>
                     <span>{r.grade}</span>
                     <span>
